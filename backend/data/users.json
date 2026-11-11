@@ -1,0 +1,26 @@
+[
+  {
+    "id": "71befb8f-0e1e-476b-9f95-2480b3a41ac2",
+    "name": "AquaAlert Admin",
+    "email": "admin@aquaalert.local",
+    "password": "$2a$10$weELbfrIg73kupxOBpGtF.9vClkFCgbhNRvPNvAFWCQAhg7Myts5.",
+    "role": "admin",
+    "createdAt": "2026-11-11T19:58:11.420Z"
+  },
+  {
+    "id": "4cb91991-b931-4b49-9302-28d3fca20789",
+    "name": "Achanta Bhavya Sai Srihitha",
+    "email": "srihithaachanta477@gmail.com",
+    "password": "$2a$10$OZB5QhHujNNWpKJTiT7DHe1bMRs.0/BC1BvFDMGe7IMP8c2kNpgMS",
+    "role": "citizen",
+    "createdAt": "2026-11-11T19:58:25.508Z"
+  },
+  {
+    "id": "7c49600c-e33a-4965-a40f-eb76fdcb3fb5",
+    "name": "Achanta Bhavya Sai Srihitha",
+    "email": "srihithaachanta24@gmail.com",
+    "password": "$2a$10$1Ak3mfpvwwzPZGfReZv7oOwr7FNrGLBmLqttE21qazkfaqK/KDnk.",
+    "role": "citizen",
+    "createdAt": "2026-11-11T20:23:26.920Z"
+  }
+]
