@@ -1,4 +1,5 @@
 
+
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import jsPDF from "jspdf";
@@ -39,6 +40,7 @@ import {
 import "./App.css";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 
 const api = axios.create({ baseURL: API });
 
@@ -100,7 +102,7 @@ const emptyQuality = {
   notes: ""
 };
 
-export default function App() {
+export function App() {
   const [user, setUser] = useState(null);
   const [authMode, setAuthMode] = useState("login");
   const [authForm, setAuthForm] = useState(emptyAuth);
@@ -1303,3 +1305,6 @@ function ComplaintTable({ complaints, isAdmin, onUpdate }) {
     </div>
   );
 }
+
+
+export default App;

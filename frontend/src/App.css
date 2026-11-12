@@ -48,3 +48,69 @@
 .dark .feature-card p {
   color: #9bb3b9;
 }
+
+/* =================================
+   AQUAALERT ADMIN FEATURE CARDS
+================================= */
+
+.admin-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  margin: 22px 0;
+}
+
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 22px;
+  border: 1px solid #e6eef0;
+  border-radius: 15px;
+  background: #ffffff;
+  color: #17313a;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 25px rgba(23, 49, 58, 0.12);
+}
+
+.feature-card strong {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.feature-card p {
+  margin: 0;
+  color: #71848b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dark .feature-card {
+  background: #1a2c33;
+  color: #e4f1f2;
+  border-color: #2a424a;
+}
+
+.dark .feature-card p {
+  color: #9bb3b9;
+}
+
+/* Dashboard responsive layout */
+
+@media (max-width: 600px) {
+  .admin-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-card {
+    padding: 18px;
+  }
+}
