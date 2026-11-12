@@ -10,7 +10,12 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
 
-import { ensureStorage, readData, writeData } from "./utils/storage.js";
+import {
+  ensureStorage,
+  readData,
+  writeData
+} from "./utils/storage.js";
+
 import { classifyComplaint } from "./utils/classify.js";
 
 dotenv.config();
@@ -27,25 +32,35 @@ if (!JWT_SECRET) {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Middleware
+const uploadDirectory = path.join(__dirname, "uploads");
+fs.mkdirSync(uploadDirectory, { recursive: true });
+
+// =====================================
+// MIDDLEWARE
+// =====================================
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173"
+];
+
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173"
-  ],
+  origin: allowedOrigins,
   credentials: true
 }));
 
-app.use(express.json());
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(express.json({ limit: "2mb" }));
+app.use("/uploads", express.static(uploadDirectory));
 
-fs.mkdirSync(path.join(__dirname, "uploads"), { recursive: true });
+// =====================================
+// PHOTO UPLOAD
+// =====================================
 
-// Photo upload configuration
 const uploadStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, "uploads"));
+    cb(null, uploadDirectory);
   },
+
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${randomUUID()}${ext}`);
@@ -54,9 +69,16 @@ const uploadStorage = multer.diskStorage({
 
 const upload = multer({
   storage: uploadStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: {
+    fileSize: 5 * 1024 * 1024
+  },
+
   fileFilter: (req, file, cb) => {
-    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    const allowed = [
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ];
 
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
@@ -66,15 +88,24 @@ const upload = multer({
   }
 });
 
-// Authentication helpers
+// =====================================
+// AUTHENTICATION HELPERS
+// =====================================
+
 const tokenFor = (user) => jwt.sign(
-  { id: user.id, role: user.role },
+  { id: user.id },
   JWT_SECRET,
   { expiresIn: "7d" }
 );
 
+function safeUser(user) {
+  const { password, ...publicUser } = user;
+  return publicUser;
+}
+
 function authenticate(req, res, next) {
   const header = req.headers.authorization || "";
+
   const token = header.startsWith("Bearer ")
     ? header.slice(7)
     : "";
@@ -86,9 +117,30 @@ function authenticate(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const users = readData("users.json");
+
+    const currentUser = users.find(
+      user => user.id === decoded.id
+    );
+
+    if (!currentUser) {
+      return res.status(401).json({
+        message: "User account not found."
+      });
+    }
+
+    req.user = {
+      id: currentUser.id,
+      name: currentUser.name,
+      email: currentUser.email,
+      role: String(currentUser.role || "citizen")
+        .trim()
+        .toLowerCase()
+    };
+
     next();
-  } catch {
+  } catch (error) {
     return res.status(401).json({
       message: "Session expired. Please log in again."
     });
@@ -105,45 +157,76 @@ function adminOnly(req, res, next) {
   next();
 }
 
-function safeUser(user) {
-  const { password, ...publicUser } = user;
-  return publicUser;
-}
+// =====================================
+// ADMIN ACCOUNT SETUP
+// =====================================
 
-// Default admin account
 async function seedAdmin() {
   const users = readData("users.json");
-  const email = "admin@aquaalert.local";
 
-  if (!users.some(user => user.email === email)) {
-    const password = await bcrypt.hash("Admin@12345", 10);
+  const email = (
+    process.env.ADMIN_EMAIL || "admin@aquaalert.local"
+  ).trim().toLowerCase();
 
-    users.push({
-      id: randomUUID(),
-      name: "AquaAlert Admin",
-      email,
-      password,
-      role: "admin",
-      createdAt: new Date().toISOString()
-    });
+  const passwordText = process.env.ADMIN_PASSWORD;
 
-    writeData("users.json", users);
+  const name = (
+    process.env.ADMIN_NAME || "AquaAlert Admin"
+  ).trim();
+
+  if (!passwordText || passwordText.length < 12) {
+    throw new Error(
+      "Set ADMIN_PASSWORD in backend/.env with at least 12 characters."
+    );
   }
+
+  const existingAdmin = users.find(
+    user => user.email === email
+  );
+
+  if (existingAdmin) {
+    existingAdmin.role = "admin";
+    existingAdmin.name = name;
+    writeData("users.json", users);
+
+    console.log("Admin account verified.");
+    return;
+  }
+
+  const admin = {
+    id: randomUUID(),
+    name,
+    email,
+    password: await bcrypt.hash(passwordText, 10),
+    role: "admin",
+    createdAt: new Date().toISOString()
+  };
+
+  users.push(admin);
+  writeData("users.json", users);
+
+  console.log("Admin account created.");
 }
 
-// Home route
+// =====================================
+// HOME
+// =====================================
+
 app.get("/", (req, res) => {
   res.json({
-    message: "AquaAlert JSON backend is running.",
-    database: "JSON file storage",
+    message: "AquaAlert backend is running successfully.",
+    storage: "JSON files",
     features: [
       "Authentication",
       "Complaints",
+      "Photo Upload",
+      "GPS Location",
+      "Complaint Classification",
       "Workers",
       "Schedules",
-      "Alerts",
       "Water Supply",
       "Water Quality",
+      "Alerts",
       "Dashboard Statistics"
     ]
   });
@@ -204,7 +287,7 @@ app.post("/api/auth/login", async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (!email?.trim() || !password) {
       return res.status(400).json({
         message: "Enter email and password."
       });
@@ -243,7 +326,9 @@ app.get("/api/auth/me", authenticate, (req, res) => {
     });
   }
 
-  res.json({ user: safeUser(user) });
+  res.json({
+    user: safeUser(user)
+  });
 });
 
 // =====================================
@@ -301,7 +386,6 @@ app.post(
     };
 
     const complaints = readData("complaints.json");
-
     complaints.unshift(complaint);
     writeData("complaints.json", complaints);
 
@@ -348,7 +432,7 @@ app.patch(
     writeData("complaints.json", complaints);
 
     res.json({
-      message: "Complaint updated.",
+      message: "Complaint updated successfully.",
       complaint
     });
   }
@@ -385,26 +469,36 @@ app.post("/api/workers", authenticate, adminOnly, (req, res) => {
   workers.push(worker);
   writeData("workers.json", workers);
 
-  res.status(201).json(worker);
+  res.status(201).json({
+    message: "Worker added successfully.",
+    worker
+  });
 });
 
-app.delete("/api/workers/:id", authenticate, adminOnly, (req, res) => {
-  const workers = readData("workers.json");
+app.delete(
+  "/api/workers/:id",
+  authenticate,
+  adminOnly,
+  (req, res) => {
+    const workers = readData("workers.json");
 
-  const updated = workers.filter(
-    item => item.id !== req.params.id
-  );
+    const updated = workers.filter(
+      item => item.id !== req.params.id
+    );
 
-  if (updated.length === workers.length) {
-    return res.status(404).json({
-      message: "Worker not found."
+    if (updated.length === workers.length) {
+      return res.status(404).json({
+        message: "Worker not found."
+      });
+    }
+
+    writeData("workers.json", updated);
+
+    res.json({
+      message: "Worker removed successfully."
     });
   }
-
-  writeData("workers.json", updated);
-
-  res.json({ message: "Worker removed." });
-});
+);
 
 // =====================================
 // WORK SCHEDULES
@@ -417,7 +511,7 @@ app.get("/api/schedules", authenticate, (req, res) => {
 app.post("/api/schedules", authenticate, adminOnly, (req, res) => {
   const { area, date, time, workerName, task } = req.body;
 
-  if (!area || !date || !time || !task) {
+  if (!area?.trim() || !date || !time || !task?.trim()) {
     return res.status(400).json({
       message: "Complete all schedule fields."
     });
@@ -427,32 +521,31 @@ app.post("/api/schedules", authenticate, adminOnly, (req, res) => {
 
   const schedule = {
     id: randomUUID(),
-    area,
+    area: area.trim(),
     date,
     time,
     workerName: workerName || "",
-    task,
+    task: task.trim(),
     createdAt: new Date().toISOString()
   };
 
   schedules.unshift(schedule);
   writeData("schedules.json", schedules);
 
-  res.status(201).json(schedule);
+  res.status(201).json({
+    message: "Schedule added successfully.",
+    schedule
+  });
 });
 
 // =====================================
-// WATER SUPPLY MANAGEMENT
+// WATER SUPPLY
 // =====================================
 
-// Citizens and admins can view water supply schedules
 app.get("/api/water-supply", authenticate, (req, res) => {
-  const supplies = readData("waterSupply.json");
-
-  res.json(supplies);
+  res.json(readData("waterSupply.json"));
 });
 
-// Only admin can add water supply schedules
 app.post(
   "/api/water-supply",
   authenticate,
@@ -476,6 +569,12 @@ app.post(
     ) {
       return res.status(400).json({
         message: "Complete all water supply fields."
+      });
+    }
+
+    if (startTime >= endTime) {
+      return res.status(400).json({
+        message: "End time must be later than start time."
       });
     }
 
@@ -514,7 +613,6 @@ app.post(
   }
 );
 
-// Only admin can delete water supply schedules
 app.delete(
   "/api/water-supply/:id",
   authenticate,
@@ -569,11 +667,14 @@ app.post("/api/alerts", authenticate, adminOnly, (req, res) => {
   alerts.unshift(alert);
   writeData("alerts.json", alerts);
 
-  res.status(201).json(alert);
+  res.status(201).json({
+    message: "Alert added successfully.",
+    alert
+  });
 });
 
 // =====================================
-// WATER QUALITY REPORTS
+// WATER QUALITY
 // =====================================
 
 app.get("/api/water-quality", authenticate, (req, res) => {
@@ -587,43 +688,44 @@ app.post(
   (req, res) => {
     const { area, ph, turbidity, notes } = req.body;
 
+    const phValue = Number(ph);
+    const turbidityValue = Number(turbidity);
+
     if (
       !area?.trim() ||
       ph === undefined ||
-      turbidity === undefined
+      turbidity === undefined ||
+      String(ph).trim() === "" ||
+      String(turbidity).trim() === "" ||
+      !Number.isFinite(phValue) ||
+      !Number.isFinite(turbidityValue) ||
+      phValue < 0 ||
+      phValue > 14 ||
+      turbidityValue < 0
     ) {
       return res.status(400).json({
-        message: "Enter area, pH and turbidity."
-      });
-    }
-
-    const report = {
-      id: randomUUID(),
-      area: area.trim(),
-      ph: Number(ph),
-      turbidity: Number(turbidity),
-      notes: notes || "",
-      createdAt: new Date().toISOString()
-    };
-
-    if (
-      !Number.isFinite(report.ph) ||
-      !Number.isFinite(report.turbidity) ||
-      report.ph < 0 ||
-      report.ph > 14 ||
-      report.turbidity < 0
-    ) {
-      return res.status(400).json({
-        message: "Enter valid water quality values."
+        message: "Enter valid area, pH and turbidity values."
       });
     }
 
     const reports = readData("waterQuality.json");
 
+    const report = {
+      id: randomUUID(),
+      area: area.trim(),
+      ph: phValue,
+      turbidity: turbidityValue,
+      notes: notes || "",
+      createdAt: new Date().toISOString()
+    };
+
     reports.unshift(report);
     writeData("waterQuality.json", reports);
 
-    res.status(201).json(report);
+    res.status(201).json({
+      message: "Water quality report added successfully.",
+      report
+    });
   }
 );
 
@@ -664,9 +766,17 @@ app.get("/api/stats", authenticate, (req, res) => {
 // =====================================
 
 app.use((err, req, res, next) => {
-  console.error(err);
+  console.error("Backend error:", err);
 
   if (err instanceof multer.MulterError) {
+    return res.status(400).json({
+      message: err.message
+    });
+  }
+
+  if (
+    err.message === "Only JPG, PNG and WEBP images are allowed."
+  ) {
     return res.status(400).json({
       message: err.message
     });
@@ -684,10 +794,12 @@ app.use((err, req, res, next) => {
 seedAdmin()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(
-        `AquaAlert backend running at http://localhost:${PORT}`
-      );
-      console.log("Storage: JSON files (no MongoDB)");
+      console.log("--------------------------------");
+      console.log("AquaAlert Backend Started");
+      console.log(`URL: http://localhost:${PORT}`);
+      console.log("Storage: JSON files");
+      console.log("MongoDB: Not required");
+      console.log("--------------------------------");
     });
   })
   .catch(error => {
